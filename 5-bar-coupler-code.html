@@ -1,0 +1,601 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ME 252: 5-Point PPR Kinematic Synthesizer</title>
+    <style>
+        :root {
+            --iitk-maroon: #800000;
+            --sidebar-bg: #f8f9fa;
+            --card-border: #e0e0e0;
+            --accent-blue: #0056b3;
+            --success-green: #00ff66;
+            --warning-orange: #ffaa00;
+            --danger-red: #ff3333;
+            --mechanism-path: #9b59b6;
+            --faint-gray: rgba(0, 0, 0, 0.15);
+            --crank-color: #1E90FF;
+            --rocker-color: #32CD32;
+            --inverted-color: #ff8c00;
+        }
+        body { font-family: 'Segoe UI', system-ui, sans-serif; margin: 0; display: flex; height: 100vh; overflow: hidden; color: #2c3e50; background: #ffffff; }
+        #sidebar { width: 440px; min-width: 440px; background: var(--sidebar-bg); border-right: 1px solid var(--card-border); display: flex; flex-direction: column; z-index: 10; box-shadow: 2px 0 15px rgba(0,0,0,0.05); }
+        .sidebar-header { padding: 20px 25px; background: white; border-bottom: 3px solid var(--iitk-maroon); }
+        .sidebar-header h1 { margin: 0 0 5px 0; font-size: 1.4rem; color: var(--iitk-maroon); }
+        .scrollable-content { padding: 25px; overflow-y: auto; flex-grow: 1; }
+        .param-box { background: white; padding: 15px; border-radius: 8px; border: 1px solid var(--card-border); margin-bottom: 15px; display: flex; gap: 15px; box-shadow: 0 2px 4px rgba(0,0,0,0.02); flex-wrap: wrap; }
+        .param-group { flex: 1; display: flex; flex-direction: column; min-width: 45%; }
+        .param-group label { font-size: 0.8rem; font-weight: bold; margin-bottom: 5px; color: #555; }
+        .param-group input, .param-group select { padding: 8px; border: 1px solid #ccc; border-radius: 4px; font-size: 0.95rem; outline: none; background: white; cursor: pointer; transition: border-color 0.2s;}
+        .param-group input:focus, .param-group select:focus { border-color: var(--accent-blue); }
+        .step-box { background: white; padding: 20px; border-radius: 12px; border-left: 5px solid var(--accent-blue); box-shadow: 0 4px 6px rgba(0,0,0,0.05); margin-bottom: 20px; min-height: 120px; }
+        .btn { padding: 12px 18px; border: none; border-radius: 8px; font-weight: 600; cursor: pointer; transition: all 0.2s; font-size: 0.95rem; width: 100%; }
+        .btn-primary { background: var(--accent-blue); color: white; }
+        .btn-secondary { background: #5a6268; color: white; }
+        .btn-success { background: #28a745; color: white; }
+        .btn-warning { background: #fd7e14; color: white; }
+        .btn:hover { filter: brightness(90%); }
+        .button-row { display: flex; gap: 10px; margin-bottom: 15px; }
+        #viewport { flex-grow: 1; position: relative; background-color: #f4f6f8; overflow: hidden;}
+        canvas { width: 100%; height: 100%; display: block; cursor: crosshair; }
+        .ui-overlay { position: absolute; bottom: 30px; left: 50%; transform: translateX(-50%); background: rgba(255,255,255,0.95); padding: 12px 25px; border-radius: 40px; box-shadow: 0 8px 20px rgba(0,0,0,0.15); display: flex; align-items: center; gap: 20px; font-weight: 600; }
+        #error-msg { position: absolute; top: 20px; left: 50%; transform: translateX(-50%); background: rgba(220, 53, 69, 0.95); color: white; padding: 12px 25px; border-radius: 8px; font-weight: bold; opacity: 0; transition: 0.3s; pointer-events: none; box-shadow: 0 4px 10px rgba(0,0,0,0.2); z-index: 100; text-align: center; }
+        
+        #cad-hud { display: none; position: absolute; top: 20px; right: 20px; width: 340px; background: rgba(25, 30, 36, 0.95); border: 2px solid #4a5568; border-radius: 8px; color: #e2e8f0; font-family: sans-serif; box-shadow: 0 10px 25px rgba(0,0,0,0.3); z-index: 100; }
+        #hud-header { padding: 10px 15px; background: #2d3748; border-bottom: 2px solid #4a5568; border-radius: 6px 6px 0 0; font-weight: bold; cursor: grab; display: flex; justify-content: space-between; user-select: none; }
+        #hud-content { padding: 15px; font-size: 13px; }
+    </style>
+</head>
+<body>
+
+    <aside id="sidebar">
+        <div class="sidebar-header">
+            <h1>5-Point Synthesis</h1>
+            <small style="color: #666; font-weight: 500;">Point Position Reduction</small>
+        </div>
+
+        <div class="scrollable-content">
+            <div class="param-box">
+                <div class="param-group" style="width: 100%;">
+                    <label>Configuration: [Pair 1] & [Pair 2]</label>
+                    <select id="config-select" onchange="app.changeConfiguration()">
+                        <option value="0,1,2,3,4">Config 1: [C₁-C₂] & [C₃-C₄] (Rem: C₅)</option>
+                        <option value="0,2,1,3,4">Config 2: [C₁-C₃] & [C₂-C₄] (Rem: C₅)</option>
+                        <option value="0,3,1,2,4">Config 3: [C₁-C₄] & [C₂-C₃] (Rem: C₅)</option>
+                        
+                        <option value="0,1,2,4,3">Config 4: [C₁-C₂] & [C₃-C₅] (Rem: C₄)</option>
+                        <option value="0,2,1,4,3">Config 5: [C₁-C₃] & [C₂-C₅] (Rem: C₄)</option>
+                        <option value="0,4,1,2,3" selected>Config 6: [C₁-C₅] & [C₂-C₃] (Rem: C₄)</option>
+                        
+                        <option value="0,1,3,4,2">Config 7: [C₁-C₂] & [C₄-C₅] (Rem: C₃)</option>
+                        <option value="0,3,1,4,2">Config 8: [C₁-C₄] & [C₂-C₅] (Rem: C₃)</option>
+                        <option value="0,4,1,3,2">Config 9: [C₁-C₅] & [C₂-C₄] (Rem: C₃)</option>
+                        
+                        <option value="0,2,3,4,1">Config 10: [C₁-C₃] & [C₄-C₅] (Rem: C₂)</option>
+                        <option value="0,3,2,4,1">Config 11: [C₁-C₄] & [C₃-C₅] (Rem: C₂)</option>
+                        <option value="0,4,2,3,1">Config 12: [C₁-C₅] & [C₃-C₄] (Rem: C₂)</option>
+                        
+                        <option value="1,2,3,4,0">Config 13: [C₂-C₃] & [C₄-C₅] (Rem: C₁)</option>
+                        <option value="1,3,2,4,0">Config 14: [C₂-C₄] & [C₃-C₅] (Rem: C₁)</option>
+                        <option value="1,4,2,3,0">Config 15: [C₂-C₅] & [C₃-C₄] (Rem: C₁)</option>
+                    </select>
+                </div>
+                <div class="param-group">
+                    <label>Radius r (Coupler Compass)</label>
+                    <input type="number" id="input-r" value="120" step="5" oninput="app.updateParams()">
+                </div>
+                <div class="param-group">
+                    <label>TP Rotation (γ) [deg]</label>
+                    <input type="number" id="input-gamma" value="130" step="5" oninput="app.updateParams()">
+                </div>
+            </div>
+
+            <div class="step-box">
+                <div style="font-size: 0.75rem; color: #7f8c8d; font-weight: 700; margin-bottom: 5px;">STEP <span id="cur-step">1</span> OF 17</div>
+                <h3 id="step-title" style="margin: 0 0 10px 0; color: var(--accent-blue);">Loading...</h3>
+                <p id="step-info" style="margin: 0; font-size: 0.95rem; line-height: 1.6;">Initializing...</p>
+            </div>
+
+            <div class="button-row">
+                <button class="btn btn-secondary" id="prevBtn" onclick="app.navigate(-1)">❮ Back</button>
+                <button class="btn btn-primary" id="nextBtn" onclick="app.navigate(1)">Next Step ❯</button>
+            </div>
+
+            <div id="final-controls" style="display:none; padding-top: 15px; border-top: 1px solid #ddd; margin-top: 15px;">
+                <button id="playBtn" class="btn btn-success" style="margin-bottom:10px;" onclick="app.toggleAnimation()">▶ Run Mechanism</button>
+                <button id="branchBtn" class="btn btn-warning" onclick="app.toggleBranch()">⇄ Switch Branch (1/4)</button>
+                <p style="font-size: 0.8rem; color: #7f8c8d; margin-top: 5px; text-align: center;">Cycles line-circle intersection roots</p>
+                
+                <div style="margin-top:20px;">
+                    <label style="font-size:0.85rem; font-weight:700;">Input Angular Velocity (ω) [rad/s]</label>
+                    <div style="display: flex; align-items: center; gap: 10px; margin-top: 5px;">
+                        <input type="range" id="slider-omega" min="0.1" max="15.0" step="0.1" value="2.0" style="flex-grow: 1; cursor: pointer;" oninput="document.getElementById('input-omega').value = this.value">
+                        <input type="number" id="input-omega" value="2.0" step="0.1" style="width: 70px; padding: 6px; border: 1px solid #ccc; border-radius: 4px; font-family: monospace; outline:none;" oninput="document.getElementById('slider-omega').value = this.value">
+                    </div>
+                </div>
+            </div>
+        </div>
+    </aside>
+
+    <main id="viewport">
+        <div id="error-msg">Invalid Geometry: Angles or radii do not yield real intersections.<br>Adjust Tracing Paper Rotation (γ) or Radius r.</div>
+        
+        <div id="cad-hud">
+            <div id="hud-header">
+                <span>CAD Kinematic Analysis</span>
+                <span style="color: #a0aec0; cursor: grab;">☩</span>
+            </div>
+            <div id="hud-content"></div>
+        </div>
+
+        <canvas id="mainCanvas"></canvas>
+        <div class="ui-overlay">
+            <span>Drag Precision Points (H_R & H_C are locked)</span> 
+            <button class="btn btn-primary" style="padding: 6px 15px; font-size: 0.8rem; width: auto;" onclick="app.resetToDefaults()">Reset Points</button>
+        </div>
+    </main>
+
+    <script>
+        const Geometry = {
+            dist: (p1, p2) => Math.hypot(p2.x - p1.x, p2.y - p1.y),
+            angle: (p1, p2) => Math.atan2(p2.y - p1.y, p2.x - p1.x),
+            mid: (p1, p2) => ({ x: (p1.x + p2.x)/2, y: (p1.y + p2.y)/2 }),
+            norm: (v) => { let m = Math.hypot(v.x, v.y); return { x: v.x/m, y: v.y/m }; },
+            elbowSign: (p1, p2, p3) => { return ((p2.x - p1.x) * (p3.y - p2.y) - (p2.y - p1.y) * (p3.x - p2.x)) >= 0 ? 1 : -1; },
+            intersectLines: (p1, v1, p2, v2) => {
+                const cross = v1.x * v2.y - v1.y * v2.x;
+                if (Math.abs(cross) < 0.001) return null;
+                const t = ((p2.x - p1.x) * v2.y - (p2.y - p1.y) * v2.x) / cross;
+                return { x: p1.x + t * v1.x, y: p1.y + t * v1.y };
+            },
+            intersectCircles: (c1, r1, c2, r2) => {
+                let d = Geometry.dist(c1, c2);
+                if (d > r1 + r2 || d < Math.abs(r1 - r2) || d === 0) return null;
+                let a = (r1**2 - r2**2 + d**2) / (2 * d);
+                let h = Math.sqrt(Math.max(0, r1**2 - a**2));
+                let x0 = c1.x + a * (c2.x - c1.x) / d;
+                let y0 = c1.y + a * (c2.y - c1.y) / d;
+                return [ { x: x0 + h * (c2.y - c1.y) / d, y: y0 - h * (c2.x - c1.x) / d }, { x: x0 - h * (c2.y - c1.y) / d, y: y0 + h * (c2.x - c1.x) / d } ];
+            },
+            intersectLineCircle: (P0, angle, C, r) => {
+                const vx = Math.cos(angle), vy = Math.sin(angle);
+                const wx = P0.x - C.x, wy = P0.y - C.y;
+                const b = 2 * (vx * wx + vy * wy);
+                const c = (wx*wx + wy*wy) - r*r;
+                const disc = b*b - 4*c;
+                if (disc < 0) return null;
+                const sqrtDisc = Math.sqrt(disc);
+                return [
+                    { x: P0.x + ((-b + sqrtDisc) / 2) * vx, y: P0.y + ((-b + sqrtDisc) / 2) * vy },
+                    { x: P0.x + ((-b - sqrtDisc) / 2) * vx, y: P0.y + ((-b - sqrtDisc) / 2) * vy }
+                ];
+            },
+            circumcenter: (p1, p2, p3) => {
+                const D = 2 * (p1.x * (p2.y - p3.y) + p2.x * (p3.y - p1.y) + p3.x * (p1.y - p2.y));
+                if (Math.abs(D) < 0.001) return null;
+                return {
+                    x: ((p1.x**2 + p1.y**2)*(p2.y - p3.y) + (p2.x**2 + p2.y**2)*(p3.y - p1.y) + (p3.x**2 + p3.y**2)*(p1.y - p2.y)) / D,
+                    y: ((p1.x**2 + p1.y**2)*(p3.x - p2.x) + (p2.x**2 + p2.y**2)*(p1.x - p3.x) + (p3.x**2 + p3.y**2)*(p2.x - p1.x)) / D
+                };
+            },
+            invert: (C1, A1, Cn, An, HR) => {
+                const rot = Geometry.angle(A1, C1) - Geometry.angle(An, Cn);
+                const vx = HR.x - An.x, vy = HR.y - An.y;
+                return { x: A1.x + vx * Math.cos(rot) - vy * Math.sin(rot), y: A1.y + vx * Math.sin(rot) + vy * Math.cos(rot) };
+            }
+        };
+
+        const app = {
+            step: 1, branch: 0, points: [], playing: false, animDir: 1,
+            config: [0, 4, 1, 2, 3], r_val: 120, gamma_val: 130,
+            
+            init() {
+                this.canvas = document.getElementById('mainCanvas');
+                this.ctx = this.canvas.getContext('2d');
+                this.resize();
+                this.resetToDefaults();
+                window.addEventListener('resize', () => this.resize());
+                this.setupInputs();
+            },
+            resize() {
+                if (this.canvas.parentElement.clientWidth > 0) {
+                    this.width = this.canvas.parentElement.clientWidth;
+                    this.height = this.canvas.parentElement.clientHeight;
+                    this.canvas.width = this.width; this.canvas.height = this.height;
+                    if (this.points.length > 0) this.draw();
+                }
+            },
+            updateParams() {
+                this.r_val = parseFloat(document.getElementById('input-r').value) || 120;
+                this.gamma_val = parseFloat(document.getElementById('input-gamma').value) || 130;
+                this.draw();
+            },
+            changeConfiguration() {
+                const vals = document.getElementById('config-select').value.split(',');
+                this.config = vals.map(v => parseInt(v));
+                this.updateTutorialText(); this.draw();
+            },
+            resetToDefaults() {
+                this.branch = 0; this.step = 1; this.playing = false;
+                
+                const vals = document.getElementById('config-select').value.split(',');
+                this.config = vals.map(v => parseInt(v));
+                
+                this.r_val = 120; this.gamma_val = 150;
+                document.getElementById('input-r').value = this.r_val;
+                document.getElementById('input-gamma').value = this.gamma_val;
+
+                const cx = this.width / 2, cy = this.height / 2;
+                const tempHC = {x: cx - 100, y: cy + 120}, tempHR = {x: cx + 100, y: cy + 120};
+                const r2 = 60, r3 = 200, r4 = 180, Lac = 120, gam = 0.5;
+                
+                this.points = []; let lastB = {x: tempHR.x, y: tempHR.y - r4};
+                for(let i=0; i<5; i++) {
+                    const ang = Math.PI*(1.0 + i*0.20);
+                    let pA = { x: tempHC.x + r2*Math.cos(ang), y: tempHC.y + r2*Math.sin(ang) };
+                    let pB_opts = Geometry.intersectCircles(pA, r3, tempHR, r4);
+                    let pB = (Geometry.dist(pB_opts[0], lastB) < Geometry.dist(pB_opts[1], lastB)) ? pB_opts[0] : pB_opts[1];
+                    lastB = pB;
+                    let th3 = Geometry.angle(pA, pB);
+                    this.points.push({ x: pA.x + Lac*Math.cos(th3+gam), y: pA.y + Lac*Math.sin(th3+gam) });
+                }
+                this.updateTutorialText(); this.draw();
+            },
+
+            updateTutorialText() {
+                const iA = this.config[0]+1, iB = this.config[1]+1, iC = this.config[2]+1, iD = this.config[3]+1, iE = this.config[4]+1;
+                this.tutorialText = [
+                    { title: "1. Dual Mid-Normals", desc: `Construct mid-normals <b>c<sub>${iA}${iB}</sub></b> and <b>c<sub>${iC}${iD}</sub></b>.` },
+                    { title: "2. Lock Rocker Ground", desc: `<b>H<sub>R</sub></b> is strictly locked at the exact intersection of c<sub>${iA}${iB}</sub> and c<sub>${iC}${iD}</sub>.` },
+                    { title: "3. Tracing Paper Overlay", desc: `Place overlay on H<sub>R</sub>. Mark c<sub>${iA}${iB}</sub>. Draw line to C<sub>${iA}</sub>. Angle is <b>φ<sub>${iA}${iB}</sub>/2</b>.` },
+                    { title: "4. Align Mid-Normals", desc: `Align c<sub>${iA}${iB}</sub> with c<sub>${iC}${iD}</sub> on overlay. Draw line to C<sub>${iC}</sub>.` },
+                    { title: "5. TP Convenient Rotation", desc: `Rotate overlay by arbitrary angle <b>γ</b> (Set in input box). This rigidly links the lines.` },
+                    { title: `6. Transfer C' Lines`, desc: `Transfer the rotated lines <b>C<sub>${iA}</sub>'</b> and <b>C<sub>${iC}</sub>'</b> onto the main canvas.` },
+                    { title: `7. Cut Compass Arc r`, desc: `With Centers C<sub>${iA}</sub>, C<sub>${iC}</sub> and <b>Radius r</b>, cut arcs on the transferred C' lines.` },
+                    { title: `8. Locate Crank Pins`, desc: `The exact intersections locate crank pins <b>A<sub>${iA}</sub></b> and <b>A<sub>${iC}</sub></b>.` },
+                    { title: "9. Lock Crank Ground", desc: `Mid-normal <b>a<sub>${iA}${iC}</sub></b> intersects the aligned transferred mid-normal at exactly <b>H<sub>C</sub></b>.` },
+                    { title: "10. Crank Circle", desc: `Draw crank circle centered at H<sub>C</sub>. Find remaining A pins.` },
+                    { title: "11. Rigid Body 1", desc: `Reference rigid triangle C<sub>${iA}</sub>-A<sub>${iA}</sub>-H<sub>R</sub>.` },
+                    { title: `12. Rigid Bodies ${iC} & ${iD}`, desc: `Visualize rigid triangles for positions ${iC} and ${iD}.` },
+                    { title: `13. Inversion ${iC} & ${iD}`, desc: `Because H<sub>R</sub> is locked, rotating ${iC} and ${iD} backward maps them to EXACTLY <b>P<sub>${iC}/${iD}'</sub></b>.` },
+                    { title: `14. Rigid Body ${iE}`, desc: `Visualize the rigid triangle for position ${iE}.` },
+                    { title: `15. Inversion ${iE}`, desc: `Rotate position ${iE} backward to find <b>P<sub>${iE}'</sub></b>.` },
+                    { title: "16. Circumcircle", desc: `The exact center of circle passing through P<sub>${iC}/${iD}'</sub>, P<sub>${iE}'</sub>, and H<sub>R</sub> is Rocker tip <b>B<sub>${iA}</sub></b>.` },
+                    { title: "17. Mechanism Complete", desc: "The 5-bar is synthesized! Click <b>Run Mechanism</b>." }
+                ];
+                document.getElementById('cur-step').innerText = this.step;
+                document.getElementById('step-title').innerText = this.tutorialText[this.step-1].title;
+                document.getElementById('step-info').innerHTML = this.tutorialText[this.step-1].desc;
+                document.getElementById('final-controls').style.display = (this.step === 17) ? 'block' : 'none';
+            },
+
+            navigate(dir) { this.step = Math.max(1, Math.min(this.step + dir, 17)); this.updateTutorialText(); this.draw(); },
+
+            toggleAnimation() {
+                this.playing = !this.playing;
+                document.getElementById('playBtn').innerText = this.playing ? "⏸ Pause Simulation" : "▶ Run Mechanism";
+                document.getElementById('playBtn').className = this.playing ? "btn btn-warning" : "btn btn-success";
+                const s = this.calculateSynthesis();
+                if(this.playing && !s.error && s.hc && s.a[this.config[0]]) {
+                    window.animationTheta = Geometry.angle(s.hc, s.a[this.config[0]]);
+                    this.animDir = 1; requestAnimationFrame(() => this.draw());
+                } else if (!this.playing) { this.draw(); }
+            },
+
+            toggleBranch() {
+                this.branch = (this.branch + 1) % 4;
+                document.getElementById('branchBtn').innerText = `⇄ Switch Branch (${this.branch + 1}/4)`;
+                const s = this.calculateSynthesis();
+                if (this.playing && !s.error && s.hc && s.a[this.config[0]]) {
+                    window.animationTheta = Geometry.angle(s.hc, s.a[this.config[0]]); this.animDir = 1;
+                }
+                this.draw();
+            },
+
+            calculateSynthesis() {
+                const result = { error: false, a: [] };
+                const p = this.points;
+                const idxA = this.config[0], idxB = this.config[1], idxC = this.config[2], idxD = this.config[3], idxE = this.config[4]; 
+
+                result.mAB = Geometry.mid(p[idxA], p[idxB]); result.dAB = Geometry.norm({ x: -(p[idxB].y - p[idxA].y), y: p[idxB].x - p[idxA].x });
+                result.mCD = Geometry.mid(p[idxC], p[idxD]); result.dCD = Geometry.norm({ x: -(p[idxD].y - p[idxC].y), y: p[idxD].x - p[idxC].x });
+                result.hr = Geometry.intersectLines(result.mAB, result.dAB, result.mCD, result.dCD);
+                if (!result.hr) { result.error = true; return result; }
+
+                let ang_hr_mAB = Geometry.angle(result.hr, result.mAB);
+                let ang_hr_mCD = Geometry.angle(result.hr, result.mCD);
+                let delta1 = Geometry.angle(result.hr, p[idxA]) - ang_hr_mAB; 
+                let delta2 = Geometry.angle(result.hr, p[idxC]) - ang_hr_mCD; 
+
+                let gamma = this.gamma_val * (Math.PI / 180);
+                result.angle_C1_prime = gamma + delta1;
+                result.angle_C2_prime = gamma + delta2;
+                result.v_aligned = { x: Math.cos(gamma), y: Math.sin(gamma) }; 
+
+                let aAOpts = Geometry.intersectLineCircle(result.hr, result.angle_C1_prime, p[idxA], this.r_val);
+                let aCOpts = Geometry.intersectLineCircle(result.hr, result.angle_C2_prime, p[idxC], this.r_val);
+                if(!aAOpts || !aCOpts) { result.error = true; return result; }
+                
+                result.a[idxA] = aAOpts[this.branch % 2]; 
+                result.a[idxC] = aCOpts[Math.floor(this.branch / 2) % 2]; 
+
+                result.maAC = Geometry.mid(result.a[idxA], result.a[idxC]); 
+                result.daAC = Geometry.norm({ x: -(result.a[idxC].y - result.a[idxA].y), y: result.a[idxC].x - result.a[idxA].x });
+                result.hc = Geometry.intersectLines(result.maAC, result.daAC, result.hr, result.v_aligned);
+                if (!result.hc) { result.error = true; return result; }
+
+                result.rCrank = Geometry.dist(result.hc, result.a[idxA]);
+                let refElbow = Geometry.elbowSign(result.hc, result.a[idxA], p[idxA]);
+                let aBOpts = Geometry.intersectCircles(p[idxB], this.r_val, result.hc, result.rCrank);
+                let aDOpts = Geometry.intersectCircles(p[idxD], this.r_val, result.hc, result.rCrank);
+                let aEOpts = Geometry.intersectCircles(p[idxE], this.r_val, result.hc, result.rCrank);
+                if(!aBOpts || !aDOpts || !aEOpts) { result.error = true; return result; }
+                
+                result.a[idxB] = aBOpts.find(opt => Geometry.elbowSign(result.hc, opt, p[idxB]) === refElbow) || aBOpts[0];
+                result.a[idxD] = aDOpts.find(opt => Geometry.elbowSign(result.hc, opt, p[idxD]) === refElbow) || aDOpts[0];
+                result.a[idxE] = aEOpts.find(opt => Geometry.elbowSign(result.hc, opt, p[idxE]) === refElbow) || aEOpts[0];
+
+                result.invC = Geometry.invert(p[idxA], result.a[idxA], p[idxC], result.a[idxC], result.hr);
+                result.invE = Geometry.invert(p[idxA], result.a[idxA], p[idxE], result.a[idxE], result.hr);
+                
+                result.bA = Geometry.circumcenter(result.hr, result.invC, result.invE);
+                if(!result.bA) { result.error = true; return result; }
+
+                if(!result.error) {
+                    result.len3 = Geometry.dist(result.a[idxA], result.bA);
+                    result.len4 = Geometry.dist(result.hr, result.bA);
+                    result.lCoupler = Geometry.dist(result.a[idxA], p[idxA]);
+                    result.gamma = Geometry.angle(result.a[idxA], p[idxA]) - Geometry.angle(result.a[idxA], result.bA);
+                }
+                return result;
+            },
+
+            analyzeKinematics(s) {
+                let data = { mu_min: 180, mu_max: 0, bbox: { minX: Infinity, maxX: -Infinity, minY: Infinity, maxY: -Infinity }, trace: [] };
+                const idxA = this.config[0];
+                let startTh = Geometry.angle(s.hc, s.a[idxA]);
+                let refBElbow = Geometry.elbowSign(s.a[idxA], s.bA, s.hr);
+                
+                for(let dir of [1, -1]) {
+                    for(let t = 0; t <= Math.PI * 2; t += 0.05) {
+                        let pA = { x: s.hc.x + s.rCrank * Math.cos(startTh + (t*dir)), y: s.hc.y + s.rCrank * Math.sin(startTh + (t*dir)) };
+                        let pB_opts = Geometry.intersectCircles(pA, s.len3, s.hr, s.len4);
+                        if (!pB_opts) break;
+                        let pB = pB_opts.find(opt => Geometry.elbowSign(pA, opt, s.hr) === refBElbow) || pB_opts[0];
+                        
+                        let vBA = { x: pA.x - pB.x, y: pA.y - pB.y }; let vBHR = { x: s.hr.x - pB.x, y: s.hr.y - pB.y };
+                        let mu = Math.acos(Math.max(-1, Math.min(1, (vBA.x * vBHR.x + vBA.y * vBHR.y) / (s.len3 * s.len4)))) * (180 / Math.PI);
+                        if(mu < data.mu_min) data.mu_min = mu; if(mu > data.mu_max) data.mu_max = mu;
+
+                        let pTh3 = Geometry.angle(pA, pB); 
+                        let pC = {x: pA.x + s.lCoupler * Math.cos(pTh3 + s.gamma), y: pA.y + s.lCoupler * Math.sin(pTh3 + s.gamma)};
+                        if (dir===1) data.trace.push(pC); else data.trace.unshift(pC);
+
+                        if (pC.x < data.bbox.minX) data.bbox.minX = pC.x; if (pC.x > data.bbox.maxX) data.bbox.maxX = pC.x;
+                        if (pC.y < data.bbox.minY) data.bbox.minY = pC.y; if (pC.y > data.bbox.maxY) data.bbox.maxY = pC.y;
+                    }
+                }
+                return data;
+            },
+
+            drawGrid() {
+                this.ctx.strokeStyle = "#e8e8e8"; this.ctx.lineWidth = 1; const step = 50;
+                for(let x = 0; x < this.width; x += step) { this.ctx.beginPath(); this.ctx.moveTo(x, 0); this.ctx.lineTo(x, this.height); this.ctx.stroke(); }
+                for(let y = 0; y < this.height; y += step) { this.ctx.beginPath(); this.ctx.moveTo(0, y); this.ctx.lineTo(this.width, y); this.ctx.stroke(); }
+            },
+
+            updateDOMHUD(s, analysis) {
+                const hud = document.getElementById('cad-hud');
+                if(s.error) { hud.style.display = 'none'; return; }
+                hud.style.display = 'block';
+
+                const L1 = Geometry.dist(s.hc, s.hr), L2 = s.rCrank, L3 = s.len3, L4 = s.len4;
+                const sorted = [L1, L2, L3, L4].sort((a, b) => a - b);
+                const isGrashof = (sorted[0] + sorted[3] <= sorted[1] + sorted[2]);
+
+                let angles = [];
+                for(let i=0; i<5; i++) { if(s.a[i]) angles.push(Math.atan2(s.a[i].y - s.hc.y, s.a[i].x - s.hc.x)); }
+                let orderDefect = false;
+                if(angles.length === 5) {
+                    let indices = [0, 1, 2, 3, 4].sort((i, j) => angles[i] - angles[j]);
+                    let str = indices.join('');
+                    let validCCW = ["01234", "12340", "23401", "34012", "40123"];
+                    let validCW  = ["43210", "32104", "21043", "10432", "04321"];
+                    orderDefect = !(validCCW.includes(str) || validCW.includes(str));
+                }
+
+                let spanX = analysis.bbox.maxX - analysis.bbox.minX;
+                let spanY = analysis.bbox.maxY - analysis.bbox.minY;
+                let isBadTrans = (analysis.mu_min <= 20 || analysis.mu_max >= 160);
+
+                let html = `
+                    <div style="display: flex; justify-content: space-between; font-family: monospace; color: #a0aec0; margin-bottom: 10px;">
+                        <div>
+                            <div>L1 (GND): ${L1.toFixed(1)}</div>
+                            <div>L2 (CRK): ${L2.toFixed(1)}</div>
+                            <div>L3 (CPL): ${L3.toFixed(1)}</div>
+                            <div>L4 (RCK): ${L4.toFixed(1)}</div>
+                        </div>
+                        <div>
+                            <div>SPAN X: ${spanX.toFixed(1)}</div>
+                            <div>SPAN Y: ${spanY.toFixed(1)}</div>
+                        </div>
+                    </div>
+                    <div style="border-top: 1px solid #4a5568; margin: 10px 0;"></div>
+                    <div style="font-weight: bold; line-height: 1.8;">
+                        <div style="color: ${isGrashof ? 'var(--success-green)' : 'var(--warning-orange)'}">${isGrashof ? '✓ Grashof (Continuous Rotation)' : '⚠ Non-Grashof (Toggle Limits)'}</div>
+                        <div style="color: ${isBadTrans ? 'var(--danger-red)' : 'var(--success-green)'}">Trans. Angle: ${analysis.mu_min.toFixed(0)}° - ${analysis.mu_max.toFixed(0)}° [${isBadTrans ? '❌ Lockup' : '✓'}]</div>
+                        <div style="color: ${orderDefect ? 'var(--danger-red)' : 'var(--success-green)'}">Order Defect: ${orderDefect ? '❌ Out of sequence' : '✓ Valid 5-Point Seq.'}</div>
+                        <div style="color: ${!isGrashof ? 'var(--warning-orange)' : 'var(--success-green)'}">Branch Defect: ${!isGrashof ? '⚠ Circuit Limits' : '✓ None'}</div>
+                    </div>
+                `;
+                document.getElementById('hud-content').innerHTML = html;
+            },
+
+            draw() {
+                if(!this.ctx) return;
+                const ctx = this.ctx; ctx.clearRect(0, 0, this.width, this.height); this.drawGrid();
+                
+                const s = this.calculateSynthesis();
+                document.getElementById('error-msg').style.opacity = s.error ? 1 : 0;
+                
+                const idxA = this.config[0], idxB = this.config[1], idxC = this.config[2], idxD = this.config[3], idxE = this.config[4];
+                const sub = ['₁', '₂', '₃', '₄', '₅'];
+
+                this.points.forEach((p, i) => { if(p) this.drawPoint(p, this.dragged===`C${i}` ? "var(--warning-orange)" : "var(--iitk-maroon)", 6, `C${sub[i]}`); });
+
+                if (s.mAB && !this.playing) {
+                    if (this.step >= 1) { 
+                        this.drawSegment(this.points[idxA], this.points[idxB], "var(--faint-gray)", `C${sub[idxA]}-C${sub[idxB]}`); this.drawInfiniteLine(s.mAB, s.dAB, "var(--accent-blue)", `c${sub[idxA]}${sub[idxB]}`, 150); 
+                        this.drawSegment(this.points[idxC], this.points[idxD], "var(--faint-gray)", `C${sub[idxC]}-C${sub[idxD]}`); this.drawInfiniteLine(s.mCD, s.dCD, "var(--accent-blue)", `c${sub[idxC]}${sub[idxD]}`, -150); 
+                    }
+                    if (this.step >= 2 && s.hr) this.drawGround(s.hr, "H_R", "black");
+                    
+                    if (this.step >= 3 && s.hr) { 
+                        let v_c15 = {x: Math.cos(Geometry.angle(s.hr, s.mAB)), y: Math.sin(Geometry.angle(s.hr, s.mAB))};
+                        this.drawInfiniteLine(s.hr, v_c15, "rgba(255, 170, 0, 0.4)", `c${sub[idxA]}${sub[idxB]} (TP)`, 200);
+                        let v_c1_prime = {x: Math.cos(s.angle_C1_prime), y: Math.sin(s.angle_C1_prime)};
+                        this.drawInfiniteLine(s.hr, v_c1_prime, "rgba(255, 170, 0, 0.6)", `C${sub[idxA]}' (TP)`, 250);
+                    }
+                    if (this.step >= 4 && s.hr) { 
+                        let v_c2_prime = {x: Math.cos(s.angle_C2_prime), y: Math.sin(s.angle_C2_prime)};
+                        this.drawInfiniteLine(s.hr, v_c2_prime, "rgba(255, 170, 0, 0.6)", `C${sub[idxC]}' (TP)`, 250);
+                    }
+                    if (this.step >= 5 && s.hr) { 
+                        
+                        this.drawInfiniteLine(s.hr, s.v_aligned, "var(--accent-blue)", `c${sub[idxA]}${sub[idxB]}' / c${sub[idxC]}${sub[idxD]}' (Aligned)`, 300);
+                    }
+                    if (this.step >= 6 && s.hr) { 
+                        let v_c1_prime = {x: Math.cos(s.angle_C1_prime), y: Math.sin(s.angle_C1_prime)};
+                        let v_c2_prime = {x: Math.cos(s.angle_C2_prime), y: Math.sin(s.angle_C2_prime)};
+                        this.drawInfiniteLine(s.hr, v_c1_prime, "#333", `C${sub[idxA]}'`, 200);
+                        this.drawInfiniteLine(s.hr, v_c2_prime, "#333", `C${sub[idxC]}'`, 200);
+                    }
+                    
+                    if (this.step >= 7) { 
+                        ctx.beginPath(); ctx.arc(this.points[idxA].x, this.points[idxA].y, this.r_val, 0, Math.PI*2); ctx.strokeStyle = "rgba(30,144,255,0.2)"; ctx.stroke(); 
+                        ctx.beginPath(); ctx.arc(this.points[idxC].x, this.points[idxC].y, this.r_val, 0, Math.PI*2); ctx.strokeStyle = "rgba(30,144,255,0.2)"; ctx.stroke(); 
+                    }
+                    if (this.step >= 8) {
+                        if(s.a[idxA]) { this.drawSegment(this.points[idxA], s.a[idxA], "var(--accent-blue)", "r"); this.drawPoint(s.a[idxA], "white", 5, `A${sub[idxA]}`); }
+                        if(s.a[idxC]) { this.drawSegment(this.points[idxC], s.a[idxC], "var(--accent-blue)", "r"); this.drawPoint(s.a[idxC], "white", 5, `A${sub[idxC]}`); }
+                    }
+                    
+                    if (this.step >= 9 && s.a[idxA] && s.a[idxC]) { 
+                        this.drawSegment(s.a[idxA], s.a[idxC], "var(--faint-gray)", `A${sub[idxA]}-A${sub[idxC]}`); this.drawInfiniteLine(s.maAC, s.daAC, "var(--crank-color)", `a${sub[idxA]}${sub[idxC]}`, 150); 
+                        if (s.hc) this.drawGround(s.hc, "H_C", "black");
+                    }
+                    if (this.step >= 10 && s.hc && !s.error) { 
+                        ctx.beginPath(); ctx.arc(s.hc.x, s.hc.y, s.rCrank, 0, Math.PI*2); ctx.strokeStyle = "var(--crank-color)"; ctx.stroke(); 
+                        if(s.a[idxB]) this.drawPoint(s.a[idxB], "#ccc", 4, `A${sub[idxB]}`); if(s.a[idxD]) this.drawPoint(s.a[idxD], "#ccc", 4, `A${sub[idxD]}`); if(s.a[idxE]) this.drawPoint(s.a[idxE], "#ccc", 4, `A${sub[idxE]}`);
+                    }
+                    
+                    if (this.step >= 11 && this.step <= 15 && s.a[idxA]) { this.drawTriangle(this.points[idxA], s.a[idxA], s.hr, "rgba(220, 20, 60, 0.15)", "rgba(220, 20, 60, 0.4)"); }
+                    if (this.step >= 12 && this.step <= 15) { 
+                        if(s.a[idxC]) this.drawTriangle(this.points[idxC], s.a[idxC], s.hr, "rgba(30, 144, 255, 0.1)", "rgba(30, 144, 255, 0.3)"); 
+                        if(s.a[idxD]) this.drawTriangle(this.points[idxD], s.a[idxD], s.hr, "rgba(50, 205, 50, 0.1)", "rgba(50, 205, 50, 0.3)"); 
+                    }
+                    if (this.step >= 13) { if(s.invC) { this.drawTriangle(this.points[idxA], s.a[idxA], s.invC, "rgba(255, 140, 0, 0.2)", "var(--inverted-color)", [5,5]); this.drawPoint(s.invC, "var(--inverted-color)", 6, `P${sub[idxC]}/${sub[idxD]}'`); } }
+                    if (this.step >= 14 && this.step <= 15 && s.a[idxE]) { this.drawTriangle(this.points[idxE], s.a[idxE], s.hr, "rgba(100, 100, 200, 0.1)", "rgba(100, 100, 200, 0.3)"); }
+                    if (this.step >= 15 && s.invE) { this.drawTriangle(this.points[idxA], s.a[idxA], s.invE, "rgba(255, 140, 0, 0.2)", "var(--inverted-color)", [5,5]); this.drawPoint(s.invE, "var(--inverted-color)", 6, `P${sub[idxE]}'`); }
+                    if (this.step >= 16 && s.bA) { 
+                        const radius = Geometry.dist(s.bA, s.hr); ctx.beginPath(); ctx.arc(s.bA.x, s.bA.y, radius, 0, Math.PI*2); ctx.strokeStyle = "rgba(40, 167, 69, 0.6)"; ctx.lineWidth = 2; ctx.stroke(); 
+                        this.drawSegment(s.bA, s.hr, "rgba(40, 167, 69, 0.8)"); if(s.invC) this.drawSegment(s.bA, s.invC, "rgba(40, 167, 69, 0.8)"); if(s.invE) this.drawSegment(s.bA, s.invE, "rgba(40, 167, 69, 0.8)");
+                        this.drawPoint(s.bA, "var(--success-green)", 7, `B${sub[idxA]}`); 
+                    }
+                } 
+
+                if ((this.playing || this.step === 17) && !s.error && s.bA && s.hc) {
+                    let analysis = this.analyzeKinematics(s);
+                    this.updateDOMHUD(s, analysis);
+                    
+                    if(this.playing) { this.drawGround(s.hr, "H_R", "white"); this.drawGround(s.hc, "H_C", "white"); }
+                    
+                    if (analysis.trace.length > 0) {
+                        this.ctx.beginPath(); this.ctx.moveTo(analysis.trace[0].x, analysis.trace[0].y);
+                        for(let i=1; i<analysis.trace.length; i++) this.ctx.lineTo(analysis.trace[i].x, analysis.trace[i].y);
+                        this.ctx.strokeStyle = "var(--mechanism-path)"; this.ctx.lineWidth = 2; this.ctx.stroke();
+                    }
+                    
+                    let curA = s.a[idxA], curB = s.bA;
+                    
+                    if (this.playing) {
+                        const omega = parseFloat(document.getElementById('input-omega').value) || 2.0;
+                        let nextTheta = window.animationTheta + ((omega * (1/60)) * this.animDir);
+                        let testA = { x: s.hc.x + s.rCrank * Math.cos(nextTheta), y: s.hc.y + s.rCrank * Math.sin(nextTheta) };
+                        let bOpts = Geometry.intersectCircles(testA, s.len3, s.hr, s.len4);
+                        
+                        if (!bOpts) { this.animDir *= -1; } else {
+                            window.animationTheta = nextTheta; curA = testA;
+                            curB = bOpts.find(opt => Geometry.elbowSign(curA, opt, s.hr) === Geometry.elbowSign(s.a[idxA], s.bA, s.hr)) || bOpts[0];
+                        }
+                    }
+                    
+                    const th3 = Geometry.angle(curA, curB);
+                    const curC = { x: curA.x + s.lCoupler * Math.cos(th3 + s.gamma), y: curA.y + s.lCoupler * Math.sin(th3 + s.gamma) };
+
+                    ctx.beginPath(); ctx.moveTo(s.hc.x, s.hc.y); ctx.lineTo(curA.x, curA.y); ctx.lineWidth = 6; ctx.strokeStyle = "#555"; ctx.stroke();
+                    ctx.beginPath(); ctx.moveTo(s.hr.x, s.hr.y); ctx.lineTo(curB.x, curB.y); ctx.lineWidth = 6; ctx.strokeStyle = "#555"; ctx.stroke();
+                    ctx.beginPath(); ctx.moveTo(curA.x, curA.y); ctx.lineTo(curB.x, curB.y); ctx.lineTo(curC.x, curC.y); ctx.closePath();
+                    ctx.fillStyle = "rgba(100, 220, 100, 0.4)"; ctx.fill(); ctx.strokeStyle = "#2ecc71"; ctx.lineWidth = 2; ctx.stroke();
+                    [curA, curB, curC].forEach(j => this.drawPoint(j, "white", 5, ""));
+                } else {
+                    document.getElementById('cad-hud').style.display = 'none';
+                }
+                
+                if (this.playing) requestAnimationFrame(() => this.draw());
+            },
+
+            drawSegment(p1, p2, color, label) { this.ctx.beginPath(); this.ctx.moveTo(p1.x, p1.y); this.ctx.lineTo(p2.x, p2.y); this.ctx.strokeStyle = color; this.ctx.lineWidth = 2.5; this.ctx.setLineDash([6, 6]); this.ctx.stroke(); this.ctx.setLineDash([]); if (label) this.drawText(label, (p1.x+p2.x)/2 + 10, (p1.y+p2.y)/2 - 10, color); },
+            drawInfiniteLine(p, d, c, t, offset) { this.ctx.beginPath(); this.ctx.moveTo(p.x - d.x*1000, p.y - d.y*1000); this.ctx.lineTo(p.x + d.x*1000, p.y + d.y*1000); this.ctx.strokeStyle = c; this.ctx.lineWidth = 1.5; this.ctx.setLineDash([5,5]); this.ctx.stroke(); this.ctx.setLineDash([]); if(t) this.drawText(t, p.x + d.x*offset + 10, p.y + d.y*offset - 10, c); },
+            drawPoint(p, c, r, label) { this.ctx.beginPath(); this.ctx.arc(p.x, p.y, r, 0, Math.PI*2); this.ctx.fillStyle = c; this.ctx.fill(); if(c==="white" || c==="black") { this.ctx.lineWidth = 2; this.ctx.strokeStyle="#333"; this.ctx.stroke(); } if(label) this.drawText(label, p.x+10, p.y-10, "#000"); },
+            drawGround(p, label, color = "black") { this.ctx.beginPath(); this.ctx.moveTo(p.x-20, p.y); this.ctx.lineTo(p.x+20, p.y); for(let i=-20; i<=15; i+=8) { this.ctx.moveTo(p.x+i, p.y); this.ctx.lineTo(p.x+i-5, p.y+8); } this.ctx.strokeStyle = "#333"; this.ctx.lineWidth = 2; this.ctx.stroke(); this.drawPoint(p, color, 6, label); },
+            drawTriangle(p1, p2, p3, fill, stroke = fill, dash = []) { this.ctx.beginPath(); this.ctx.moveTo(p1.x, p1.y); this.ctx.lineTo(p2.x, p2.y); this.ctx.lineTo(p3.x, p3.y); this.ctx.closePath(); this.ctx.fillStyle = fill; this.ctx.fill(); this.ctx.setLineDash(dash); this.ctx.strokeStyle = stroke; this.ctx.lineWidth = 1.5; this.ctx.stroke(); this.ctx.setLineDash([]); },
+            drawText(txt, x, y, color) { this.ctx.fillStyle = color; this.ctx.font = "bold 13px sans-serif"; this.ctx.fillText(txt, x, y); },
+
+            setupInputs() {
+                this.canvas.onmousedown = (e) => {
+                    const rect = this.canvas.getBoundingClientRect(), mx = e.clientX - rect.left, my = e.clientY - rect.top;
+                    this.points.forEach((p, i) => { if (p && Geometry.dist(p, {x:mx, y:my}) < 20) this.dragged = `C${i}`; });
+                };
+                
+                const hud = document.getElementById('cad-hud');
+                const header = document.getElementById('hud-header');
+                let isDraggingHUD = false, startX, startY, initX, initY;
+
+                header.addEventListener('mousedown', (e) => {
+                    isDraggingHUD = true;
+                    startX = e.clientX; startY = e.clientY;
+                    initX = hud.offsetLeft; initY = hud.offsetTop;
+                    header.style.cursor = 'grabbing';
+                    e.preventDefault(); 
+                });
+
+                window.addEventListener('mousemove', (e) => {
+                    if (isDraggingHUD) {
+                        hud.style.left = (initX + e.clientX - startX) + 'px';
+                        hud.style.top = (initY + e.clientY - startY) + 'px';
+                        hud.style.right = 'auto'; 
+                    }
+                    if (this.dragged !== undefined) {
+                        const rect = this.canvas.getBoundingClientRect(), mx = e.clientX - rect.left, my = e.clientY - rect.top;
+                        if (this.dragged.startsWith?.('C')) { 
+                            this.points[parseInt(this.dragged[1])].x = mx; this.points[parseInt(this.dragged[1])].y = my; 
+                        }
+                        if(!this.playing) this.draw();
+                    }
+                });
+
+                window.addEventListener('mouseup', () => {
+                    this.dragged = undefined;
+                    isDraggingHUD = false;
+                    header.style.cursor = 'grab';
+                });
+            }
+        };
+
+        window.onload = () => { setTimeout(() => app.init(), 100); };
+    </script>
+</body>
+</html>
