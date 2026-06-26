@@ -21,7 +21,7 @@
         }
 
         body { font-family: 'Segoe UI', system-ui, sans-serif; margin: 0; display: flex; height: 100vh; overflow: hidden; color: #2c3e50; background: #ffffff; }
-
+        
         /*  SIDEBAR UI  */
         #sidebar { width: 440px; min-width: 440px; background: var(--sidebar-bg); border-right: 1px solid var(--card-border); display: flex; flex-direction: column; z-index: 10; box-shadow: 2px 0 15px rgba(0,0,0,0.05); }
         .sidebar-header { padding: 20px 25px; background: white; border-bottom: 3px solid var(--iitk-maroon); }
@@ -55,12 +55,22 @@
 <body>
 
     <aside id="sidebar">
-        <div class="sidebar-header">
-            <h1>4-Point Synthesis</h1>
-            <small style="color: #666; font-weight: 500;">Industry Analytical Dashboard</small>
-        </div>
+    <div class="sidebar-header">
+        <h1>4-Point Synthesis</h1>
+        <small style="color:#666; font-weight:500;">
+            Industry Analytical Dashboard
+        </small>
+    </div>
 
-        <div class="scrollable-content">
+    <div style="padding:15px;">
+        <button
+            class="btn btn-success"
+            onclick="window.location.href='5-bar-coupler-code.html'">
+            Open 5-Point Synthesizer →
+        </button>
+    </div>
+
+    <div class="scrollable-content">
             <div class="param-box">
                 <div class="param-group" style="width: 100%;">
                     <label>Base Point Pair (The 6 Combinations)</label>
